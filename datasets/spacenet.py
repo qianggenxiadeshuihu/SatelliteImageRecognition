@@ -12,7 +12,7 @@ import shapely.wkt
 import shapely.ops
 import shapely.geometry
 
-from utils.log import logger
+from tools.log import logger
 
 ORIGINAL_SIZE = 650
 INPUT_SIZE = 256
@@ -22,15 +22,17 @@ MIN_POLYGON_AREA = 30
 
 def image_mask_from_summary(df, image_id):
     im_mask = np.zeros((ORIGINAL_SIZE, ORIGINAL_SIZE))
-
+    im_polygon = []
     if len(df[df.ImageId == image_id]) == 0:
         raise RuntimeError("ImageId not found on summaryData: {}".format(
             image_id))
 
     for idx, row in df[df.ImageId == image_id].iterrows():
         shape_obj = shapely.wkt.loads(row.PolygonWKT_Pix)
+        part = {'exterior_coords': [], 'interior_coords': []}
         if shape_obj.exterior is not None:
             coords = list(shape_obj.exterior.coords)
+            part['exterior_coords'].extend(coords)
             x = [round(float(pp[0])) for pp in coords]
             y = [round(float(pp[1])) for pp in coords]
             yy, xx = skimage.draw.polygon(y, x, (ORIGINAL_SIZE, ORIGINAL_SIZE))
@@ -39,17 +41,21 @@ def image_mask_from_summary(df, image_id):
             interiors = shape_obj.interiors
             for interior in interiors:
                 coords = list(interior.coords)
+                # there maybe many interiors, so a list is required
+                part['interior_coords'].append(coords)
                 x = [round(float(pp[0])) for pp in coords]
                 y = [round(float(pp[1])) for pp in coords]
                 yy, xx = skimage.draw.polygon(y, x, (ORIGINAL_SIZE, ORIGINAL_SIZE))
                 im_mask[yy, xx] = 0
+        if len(part['exterior_coords']) > 0:
+            im_polygon.append(part)
     # dont resize here, since we want real image for output
     # im_mask = skimage.transform.resize(im_mask, (INPUT_SIZE, INPUT_SIZE))
     # im_mask = (im_mask > 0.5).astype(np.uint8)
-    return im_mask
+    return im_mask, im_polygon
 
 
-def parse_and_save_target(path_dir, image_id_csv, image_mask_h5):
+def parse_and_save_target(path_dir, image_id_csv, image_mask_h5, image_polygon_csv):
     image_list = []
     total_image_df = pd.DataFrame()
     for csv_f in path_dir.rglob('*.csv'):
@@ -65,14 +71,20 @@ def parse_and_save_target(path_dir, image_id_csv, image_mask_h5):
     image_list_df = pd.DataFrame(columns=['id', 'ImageId'], data=[i for i in zip(range(len(image_list)), image_list)])
     image_list_df.to_csv(image_id_csv, encoding='utf-8')
 
+    image_polygon_df = image_list_df
+    image_polygon_df['ImagePolygon'] = None
+
     with tb.open_file(image_mask_h5, 'w') as f:
-        for image_id in tqdm.tqdm(image_list):
-            im_mask = image_mask_from_summary(total_image_df, image_id)
+        for index, image_id in tqdm.tqdm(enumerate(image_list)):
+            im_mask, im_polygon = image_mask_from_summary(total_image_df, image_id)
             atom = tb.Atom.from_dtype(im_mask.dtype)
             filters = tb.Filters(complib='blosc', complevel=9)
             ds = f.create_carray(f.root, image_id, atom, im_mask.shape,
                                  filters=filters)
             ds[:] = im_mask
+
+            image_polygon_df.at[index, 'ImagePolygon'] = im_polygon
+    image_polygon_df.to_csv(image_polygon_csv, encoding='utf-8')
     return image_list
 
 
@@ -175,6 +187,11 @@ def load_feature(image_id_csv, image_feature_h5):
     features = np.array(features)
 
     return features
+
+
+def load_feature_by_imageid(image_id, image_feature_h5):
+    with tb.open_file(image_feature_h5, 'r') as f:
+        return np.array(f.get_node('/' + image_id))
 
 
 def load_batch_data(image_list, image_feature_h5, image_target_h5, batch_size, kind='train',

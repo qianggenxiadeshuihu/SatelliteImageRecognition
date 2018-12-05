@@ -12,7 +12,7 @@ from models.unet import get_unet
 from datasets.spacenet import \
     parse_and_save_target, parse_and_save_feature, split_train_validation_batch, mask_to_poly, \
     ORIGINAL_SIZE, INPUT_SIZE, MIN_POLYGON_AREA
-from utils.log import logger
+from tools.log import logger
 
 # import os
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -36,6 +36,7 @@ if __name__ == "__main__":
     # output files
     OUTPUT_DIR = Path('/e/data/output/AOI_4_Shanghai_Train_20181126')
     OUTPUT_IMAGE_MASK_H5 = str(OUTPUT_DIR / 'image_mask.h5')
+    OUTPUT_IMAGE_POLYGON_CSV = str(OUTPUT_DIR / 'image_polygon.csv')
     OUTPUT_IMAGE_ID_CSV = str(OUTPUT_DIR / 'image_id.csv')
     OUTPUT_IMAGE_RGB_H5 = str(OUTPUT_DIR / 'image_rgb.h5')
     OUTPUT_IMAGE_RGB_NORM_CSV = str(OUTPUT_DIR / 'image_rgb_norm.csv')
@@ -56,7 +57,7 @@ if __name__ == "__main__":
     PREPARE = True
 
     if PREPARE:
-        parse_and_save_target(SUMMARY_DATA_DIR, OUTPUT_IMAGE_ID_CSV, OUTPUT_IMAGE_MASK_H5)
+        parse_and_save_target(SUMMARY_DATA_DIR, OUTPUT_IMAGE_ID_CSV, OUTPUT_IMAGE_MASK_H5, OUTPUT_IMAGE_POLYGON_CSV)
 
         parse_and_save_feature(DATA_DIR, OUTPUT_IMAGE_ID_CSV, OUTPUT_IMAGE_RGB_H5,
                                OUTPUT_IMAGE_RGB_NORM_CSV, 'RGB-PanSharpen', 3)
@@ -73,7 +74,7 @@ if __name__ == "__main__":
     # logger.info("size of features : {}".format(features.shape))
     # features_train, feature_val, targets_train, targets_val = split_train_validation(features, targets)
 
-    if MODE == "test":
+    if MODE == "train":
         train_data_generator, val_data_generator, train_pairs, val_pairs = \
             split_train_validation_batch(OUTPUT_IMAGE_ID_CSV, OUTPUT_IMAGE_RGB_H5, OUTPUT_IMAGE_MASK_H5,
                                          train_batch_size=TRAIN_BATCH_SIZE, val_batch_size=VAL_BATCH_SIZE,
