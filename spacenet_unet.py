@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import skimage.io
 import shapely.geometry
+import skimage.transform
 
 from keras.callbacks import ModelCheckpoint, EarlyStopping, History
 import tensorflow as tf
@@ -106,7 +107,7 @@ if __name__ == "__main__":
         # Save evaluation history
         pd.DataFrame(model_history.history).to_csv(OUTPUT_UNET_TRAIN_HISTORY_CSV, index=False)
         logger.info("train unet down")
-    else:
+    elif MODE == "val":
         train_data_generator, val_data_generator, train_pairs, val_pairs = \
             split_train_validation_batch(OUTPUT_IMAGE_ID_CSV, OUTPUT_IMAGE_RGB_H5, OUTPUT_IMAGE_MASK_H5,
                                          train_batch_size=TRAIN_BATCH_SIZE, val_batch_size=1,
@@ -163,3 +164,18 @@ if __name__ == "__main__":
                         -1,
                         "POLYGON EMPTY"))
         del model
+    elif MODE == "predict":
+        model = get_unet(feature_count=3)
+        model.load_weights(OUTPUT_UNET_LAST_MODEL_PATH)
+        name = "/home/jiayi/111.png"
+        x = skimage.io.imread(name)
+        x = skimage.transform.resize(x, (INPUT_SIZE, INPUT_SIZE))
+        x = np.array([x])
+        y_pred = model.predict(x, batch_size=1, verbose=1)
+        result_mask = (skimage.transform.resize(y_pred[0], (ORIGINAL_SIZE, ORIGINAL_SIZE)) > 0.5).astype(np.uint8)
+        result_mask = result_mask.reshape((ORIGINAL_SIZE, ORIGINAL_SIZE))
+        mask_locations_y, mask_locations_x = np.where(result_mask == 1)
+        im_pred = skimage.transform.resize(x[0], (ORIGINAL_SIZE, ORIGINAL_SIZE))
+        im_pred[mask_locations_y, mask_locations_x, :]\
+            = im_pred[mask_locations_y, mask_locations_x, :] * 0.5 + np.array([0, 0.5, 0]) * 0.5
+        skimage.io.imsave("/home/jiayi/111_2.jpg".format(name), im_pred)
